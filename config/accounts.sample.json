@@ -1,0 +1,29 @@
+[
+  {
+    "name": "owner-name",
+    "profile_name": "main-browser",
+    "cdp_url": "http://127.0.0.1:9222",
+    "brokers": {
+      "shinhan": {
+        "domestic_account_number": "000-00-000000",
+        "account_inquiry_password": "0000"
+      },
+      "miraeasset": {
+        "account_number": "000-0000-0000-0",
+        "pension_account_number": "000-00-0000000",
+        "retirement_account_number": "000-0000-0000-0"
+      }
+    }
+  },
+  {
+    "name": "family-member",
+    "profile_name": "sub-browser",
+    "cdp_url": "http://127.0.0.1:9223",
+    "brokers": {
+      "shinhan": {
+        "domestic_account_number": "111-11-111111",
+        "account_inquiry_password": "0000"
+      }
+    }
+  }
+]

@@ -1,0 +1,52 @@
+{
+  "common": {
+    "account_name": [
+      ".account-name",
+      "[data-testid='account-name']"
+    ],
+    "account_masked_id": [
+      ".account-number",
+      "[data-testid='account-number']"
+    ]
+  },
+  "domestic": {
+    "table": [
+      "table:has(th:has-text('종목명'))",
+      "table:has-text('국내')",
+      "table"
+    ],
+    "column_map": {
+      "name": 0,
+      "quantity": 1,
+      "amount_in_krw": 4
+    }
+  },
+  "foreign": {
+    "table": [
+      "table:has(th:has-text('국가'))",
+      "table:has(th:has-text('종목명'))",
+      "table:has-text('해외')",
+      "table"
+    ],
+    "column_map": {
+      "market": 0,
+      "name": 1,
+      "quantity": 2,
+      "amount_in_unit_currency": 4
+    }
+  },
+  "cash": {
+    "table": [
+      "table:has-text('예수금')",
+      "table:has-text('RP')",
+      "table"
+    ],
+    "column_map": {
+      "name": 0,
+      "unit_currency": 1,
+      "amount_in_unit_currency": 2,
+      "fx_rate_to_krw": 3,
+      "amount_in_krw": 4
+    }
+  }
+}

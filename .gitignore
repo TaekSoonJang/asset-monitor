@@ -1,0 +1,15 @@
+.env
+.env.*
+config/accounts.json
+service-account*.json
+credentials*.json
+logs/
+.asset-monitor.lock
+.pytest_cache/
+.venv/
+__pycache__/
+*.pyc
+artifacts/
+build/
+dist/
+*.egg-info/

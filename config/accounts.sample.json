@@ -12,6 +12,12 @@
         "account_number": "000-0000-0000-0",
         "pension_account_number": "000-00-0000000",
         "retirement_account_number": "000-0000-0000-0"
+      },
+      "upbit": {
+        "access_key": "your-upbit-access-key",
+        "secret_key": "your-upbit-secret-key",
+        "account_name": "Upbit",
+        "min_amount_krw": 10000
       }
     }
   },

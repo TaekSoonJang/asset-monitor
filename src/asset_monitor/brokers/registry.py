@@ -11,6 +11,8 @@ from .miraeasset.config import load_miraeasset_config
 from .miraeasset.collector import MiraeAssetCollector
 from .shinhan.collector import ShinhanCollector
 from .shinhan.config import load_shinhan_config
+from .upbit.collector import UpbitCollector
+from .upbit.config import load_upbit_config
 
 
 def create_broker_collector(config: AppConfig, account: AccountConfig, debug_dir: Path) -> BrokerCollector:
@@ -30,6 +32,12 @@ def create_broker_collector(config: AppConfig, account: AccountConfig, debug_dir
     if broker == "kiwoom":
         return KiwoomCollector(
             broker_config=load_kiwoom_config(config),
+            account=account,
+            debug_dir=debug_dir,
+        )
+    if broker == "upbit":
+        return UpbitCollector(
+            broker_config=load_upbit_config(config),
             account=account,
             debug_dir=debug_dir,
         )

@@ -72,9 +72,6 @@ def _parse_account_entries(payload: object, index: int) -> list[AccountConfig]:
 
     if not name:
         raise ValueError(f"Account entry #{index} is missing 'name'.")
-    if not cdp_url:
-        raise ValueError(f"Account entry #{index} is missing 'cdp_url'.")
-
     brokers_payload = payload.get("brokers")
     if brokers_payload is not None:
         return _parse_multi_broker_accounts(
@@ -86,6 +83,8 @@ def _parse_account_entries(payload: object, index: int) -> list[AccountConfig]:
         )
 
     broker = str(payload.get("broker") or "shinhan").strip().lower()
+    if broker != "upbit" and not cdp_url:
+        raise ValueError(f"Account entry #{index} is missing 'cdp_url'.")
     settings = payload.get("settings")
     if settings is None:
         settings = _legacy_account_settings(payload)
@@ -123,6 +122,8 @@ def _parse_multi_broker_accounts(
 
     accounts: list[AccountConfig] = []
     for broker, broker_payload in all_broker_settings.items():
+        if broker != "upbit" and not cdp_url:
+            raise ValueError(f"Account entry #{index} broker '{broker}' is missing 'cdp_url'.")
         normalized_settings = _normalize_settings_dict(broker_payload, index)
         normalized_settings["_all_broker_settings"] = all_broker_settings
         accounts.append(
@@ -190,6 +191,11 @@ def _load_broker_settings(
                     "https://www1.kiwoom.com/h/mykiwoom/asset/VTotalBalanceForeignView",
                 ),
             }
+        }
+
+    if "upbit" in brokers:
+        settings["upbit"] = {
+            "api_base_url": os.getenv("UPBIT_API_BASE_URL", "https://api.upbit.com"),
         }
 
     return settings

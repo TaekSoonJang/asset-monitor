@@ -307,5 +307,6 @@ def _asset_group_summary_label(asset_group: str) -> str:
         "foreign_stock": "해외주식 합계(원화환산)",
         "cash_equivalent": "현금성자산 합계(원화환산)",
         "broker_position": "보유상품 합계(원화환산)",
+        "crypto_asset": "코인 합계(원화환산)",
     }
     return labels.get(asset_group, asset_group)

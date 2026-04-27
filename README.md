@@ -8,6 +8,7 @@
 
 - `shinhan`: 신한투자증권
 - `miraeasset`: 미래에셋증권
+- `kiwoom`: 키움증권
 
 ## Project Structure
 
@@ -15,6 +16,7 @@
 - `src/asset_monitor/brokers/registry.py`: 브로커별 collector 선택
 - `src/asset_monitor/brokers/shinhan/`: 신한투자증권 전용 로직
 - `src/asset_monitor/brokers/miraeasset/`: 미래에셋증권 전용 로직
+- `src/asset_monitor/brokers/kiwoom/`: 키움증권 전용 로직
 - `src/asset_monitor/parsing.py`: 공통 파싱 및 요약
 - `src/asset_monitor/sheets.py`: Google Sheets 쓰기
 - `config/accounts.sample.json`: 계정 설정 예시
@@ -49,6 +51,8 @@ LOCK_FILE=.asset-monitor.lock
 MIRAEASSET_ACCOUNT_ASSETS_URL=https://securities.miraeasset.com/hkd/hkd1002/r01.do?acno=
 MIRAEASSET_PENSION_BALANCE_URL=https://securities.miraeasset.com/hkp/hkp1002/r01.do
 MIRAEASSET_RETIREMENT_PENSION_BALANCE_URL=https://securities.miraeasset.com/hkp/hkp2001/r01.do
+KIWOOM_DOMESTIC_URL=https://www1.kiwoom.com/h/mykiwoom/asset/VTotalBalanceDomesticView
+KIWOOM_FOREIGN_URL=https://www1.kiwoom.com/h/mykiwoom/asset/VTotalBalanceForeignView
 ```
 
 민감정보가 들어가는 `.env`, `config/accounts.json`, `service-account*.json`은 저장소에 커밋하지 않습니다.
@@ -78,6 +82,10 @@ Copy-Item config/accounts.sample.json config/accounts.json
         "account_number": "000-0000-0000-0",
         "pension_account_number": "000-00-0000000",
         "retirement_account_number": "000-0000-0000-0"
+      },
+      "kiwoom": {
+        "account_number": "0000-0000",
+        "account_inquiry_password": "000000"
       }
     }
   }
@@ -95,6 +103,8 @@ Copy-Item config/accounts.sample.json config/accounts.json
 - `brokers.miraeasset.account_number`: 미래에셋 일반 자산 계좌번호
 - `brokers.miraeasset.pension_account_number`: 미래에셋 개인연금 계좌번호
 - `brokers.miraeasset.retirement_account_number`: 미래에셋 퇴직연금 계좌번호
+- `brokers.kiwoom.account_number`: 키움 조회에 사용할 계좌번호
+- `brokers.kiwoom.account_inquiry_password`: 키움 조회 비밀번호
 
 `brokers` 아래에 여러 브로커를 넣으면 로더가 브로커별 실행 단위로 자동 분리합니다.
 
@@ -124,6 +134,7 @@ pytest
 
 - 신한: `src/asset_monitor/brokers/shinhan/config.py`의 URL과 `config/selectors.sample.json`의 selector
 - 미래에셋: `src/asset_monitor/brokers/miraeasset/config.py`의 route, DOM id, AJAX 경로
+- 키움: `src/asset_monitor/brokers/kiwoom/config.py`의 route, DOM id
 - 디버그 파일: `artifacts/debug/<broker>/.../*.html`
 - 실행 로그: `logs/`
 

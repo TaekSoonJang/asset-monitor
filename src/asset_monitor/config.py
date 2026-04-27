@@ -178,6 +178,20 @@ def _load_broker_settings(
             }
         }
 
+    if "kiwoom" in brokers:
+        settings["kiwoom"] = {
+            "routes": {
+                "domestic_url": os.getenv(
+                    "KIWOOM_DOMESTIC_URL",
+                    "https://www1.kiwoom.com/h/mykiwoom/asset/VTotalBalanceDomesticView",
+                ),
+                "foreign_url": os.getenv(
+                    "KIWOOM_FOREIGN_URL",
+                    "https://www1.kiwoom.com/h/mykiwoom/asset/VTotalBalanceForeignView",
+                ),
+            }
+        }
+
     return settings
 
 

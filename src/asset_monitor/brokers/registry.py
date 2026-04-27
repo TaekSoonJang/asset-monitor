@@ -5,6 +5,8 @@ from pathlib import Path
 from asset_monitor.config import AccountConfig, AppConfig
 
 from .base import BrokerCollector
+from .kiwoom.collector import KiwoomCollector
+from .kiwoom.config import load_kiwoom_config
 from .miraeasset.config import load_miraeasset_config
 from .miraeasset.collector import MiraeAssetCollector
 from .shinhan.collector import ShinhanCollector
@@ -22,6 +24,12 @@ def create_broker_collector(config: AppConfig, account: AccountConfig, debug_dir
     if broker == "miraeasset":
         return MiraeAssetCollector(
             broker_config=load_miraeasset_config(config),
+            account=account,
+            debug_dir=debug_dir,
+        )
+    if broker == "kiwoom":
+        return KiwoomCollector(
+            broker_config=load_kiwoom_config(config),
             account=account,
             debug_dir=debug_dir,
         )

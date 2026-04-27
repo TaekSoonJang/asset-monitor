@@ -48,6 +48,8 @@ def _decimal_to_string(value: Decimal | None) -> str:
 
 
 def _label(mapping: dict[str, str], value: str) -> str:
+    if mapping is BROKER_LABELS and value == "kiwoom":
+        return "키움증권"
     return mapping.get(value, value)
 
 

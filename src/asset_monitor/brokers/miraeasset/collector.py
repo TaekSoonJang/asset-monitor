@@ -40,6 +40,8 @@ class MiraeAssetCollector:
             return {"domestic": records, "foreign": [], "cash": []}
 
     def _collect_account_holdings(self, page: Page, captured_at: str) -> list[AssetRecord]:
+        if not self._setting("account_number"):
+            return []
         frame = self._open_frame_path(page, self.broker_config.routes.account_assets_url)
         self._ensure_logged_in(frame)
 
@@ -51,6 +53,8 @@ class MiraeAssetCollector:
         return self._parse_account_holdings(frame, captured_at)
 
     def _collect_personal_pension_holdings(self, page: Page, captured_at: str) -> list[AssetRecord]:
+        if not self._setting("pension_account_number"):
+            return []
         frame = self._open_frame_path(page, self.broker_config.routes.personal_pension_balance_url)
         self._ensure_logged_in(frame)
         self._select_pension_account(frame)
@@ -59,6 +63,8 @@ class MiraeAssetCollector:
         return self._parse_pension_holdings(frame, captured_at) + self._parse_pension_cash(frame, captured_at)
 
     def _collect_retirement_pension_holdings(self, page: Page, captured_at: str) -> list[AssetRecord]:
+        if not self._setting("retirement_account_number"):
+            return []
         frame = self._open_frame_path(page, self.broker_config.routes.retirement_pension_balance_url)
         self._ensure_logged_in(frame)
         frame = self._select_retirement_account(page, frame)

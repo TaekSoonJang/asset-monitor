@@ -1,6 +1,6 @@
 # Asset Monitor
 
-로그인된 증권사 웹 화면 또는 거래소 API에서 자산 정보를 수집하고, Google Sheets의 최신 자산/요약/실행 로그 탭에 반영하는 Python 프로젝트입니다.
+로그인된 증권사 웹 화면 또는 거래소 API에서 자산 정보를 수집하고, Google Sheets의 금융자산/요약/실행 로그 탭에 반영하는 Python 프로젝트입니다.
 
 브로커별 수집 로직은 `src/asset_monitor/brokers/<broker_name>/` 아래에 분리되어 있고, 공통 pipeline이 수집 결과를 `AssetRecord`로 모아 Google Sheets에 업데이트합니다.
 

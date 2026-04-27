@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from google.oauth2.service_account import Credentials
+from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 
 from .models import AssetRecord, RunLogEntry
 from .parsing import summarize_latest
 
-LATEST_ASSET_SHEET = "최신자산"
+LATEST_ASSET_SHEET = "금융자산"
+ADDITIONAL_ASSET_SHEET = "추가 금융자산"
 SUMMARY_SHEET = "자산요약"
 RUN_LOG_SHEET = "실행로그"
 LEGACY_RAW_SHEET = "원본스냅샷보관"
 
 LEGACY_SHEET_NAMES = {
     "latest_by_asset": LATEST_ASSET_SHEET,
+    "최신자산": LATEST_ASSET_SHEET,
     "latest_summary": SUMMARY_SHEET,
     "run_log": RUN_LOG_SHEET,
     "raw_snapshots": LEGACY_RAW_SHEET,
@@ -45,6 +50,30 @@ RUN_LOG_HEADERS = [
     "메시지",
     "디버그경로",
 ]
+
+BROKER_CODES_BY_LABEL = {
+    "신한투자증권": "shinhan",
+    "미래에셋증권": "miraeasset",
+    "키움증권": "kiwoom",
+    "Upbit": "upbit",
+}
+
+ASSET_GROUP_CODES_BY_LABEL = {
+    "국내주식": "domestic_stock",
+    "해외주식": "foreign_stock",
+    "현금성자산": "cash_equivalent",
+    "보유상품": "broker_position",
+    "코인": "crypto_asset",
+}
+
+ASSET_SUBTYPE_CODES_BY_LABEL = {
+    "주식": "stock",
+    "원화예수금": "krw_cash",
+    "외화예수금": "fx_cash",
+    "RP": "rp",
+    "개인연금": "personal_pension",
+    "퇴직연금": "retirement_pension",
+}
 
 
 class GoogleSheetsWriter:
@@ -79,7 +108,7 @@ class GoogleSheetsWriter:
                 normalized_existing.discard(old_name)
                 normalized_existing.add(new_name)
 
-        for title in (LATEST_ASSET_SHEET, SUMMARY_SHEET, RUN_LOG_SHEET):
+        for title in (LATEST_ASSET_SHEET, ADDITIONAL_ASSET_SHEET, SUMMARY_SHEET, RUN_LOG_SHEET):
             if title not in normalized_existing:
                 requests.append({"addSheet": {"properties": {"title": title}}})
 
@@ -90,13 +119,17 @@ class GoogleSheetsWriter:
             ).execute()
 
         self._sync_header(LATEST_ASSET_SHEET, LATEST_HEADERS)
+        self._sync_header(ADDITIONAL_ASSET_SHEET, LATEST_HEADERS)
         self._sync_header(SUMMARY_SHEET, ["구분", "값"])
         self._sync_header(RUN_LOG_SHEET, RUN_LOG_HEADERS)
 
     def refresh_latest_views(self, records: list[AssetRecord]) -> None:
-        latest_rows, summary_rows = summarize_latest(records)
+        latest_rows, _ = summarize_latest(records)
         latest_payload = [LATEST_HEADERS] + latest_rows
         self._replace_sheet(LATEST_ASSET_SHEET, latest_payload)
+
+        additional_records = self._read_additional_asset_records()
+        _, summary_rows = summarize_latest(records + additional_records)
         self._replace_sheet(SUMMARY_SHEET, summary_rows)
 
     def append_run_log(self, entry: RunLogEntry) -> None:
@@ -136,8 +169,59 @@ class GoogleSheetsWriter:
             body={"values": values},
         ).execute()
 
+    def _read_additional_asset_records(self) -> list[AssetRecord]:
+        try:
+            response = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"{ADDITIONAL_ASSET_SHEET}!A2:L",
+            ).execute()
+        except HttpError as exc:
+            if exc.resp.status == 400:
+                return []
+            raise
+
+        return [_asset_record_from_sheet_row(row) for row in response.get("values", []) if _has_asset_row_value(row)]
+
 
 def build_run_log_message(errors: dict[str, str]) -> str:
     if not errors:
         return "성공"
     return "; ".join(f"{key}={value}" for key, value in sorted(errors.items()))
+
+
+def _asset_record_from_sheet_row(row: list[str]) -> AssetRecord:
+    padded = row + [""] * (len(LATEST_HEADERS) - len(row))
+    return AssetRecord(
+        captured_at=padded[0],
+        broker_name=BROKER_CODES_BY_LABEL.get(padded[1], padded[1]),
+        owner_name=padded[2],
+        account_name="",
+        account_masked_id="",
+        asset_group=ASSET_GROUP_CODES_BY_LABEL.get(padded[3], padded[3]),
+        asset_subtype=ASSET_SUBTYPE_CODES_BY_LABEL.get(padded[4], padded[4]),
+        market=padded[5],
+        symbol=padded[6],
+        name=padded[7],
+        quantity=_parse_decimal(padded[8]),
+        unit_currency=padded[9] or "KRW",
+        fx_rate_to_krw=_parse_decimal(padded[10]),
+        amount_in_unit_currency=None,
+        amount_in_krw=_parse_decimal(padded[11]),
+        source_page="manual_additional_asset",
+    )
+
+
+def _has_asset_row_value(row: list[str]) -> bool:
+    return any(cell.strip() for cell in row)
+
+
+def _parse_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().replace(",", "")
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None

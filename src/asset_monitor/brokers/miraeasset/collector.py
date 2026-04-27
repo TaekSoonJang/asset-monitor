@@ -11,6 +11,9 @@ from asset_monitor.parsing import clean_text, parse_decimal
 
 from .config import MiraeAssetBrokerConfig
 
+RETIREMENT_HOLDINGS_MAX_ATTEMPTS = 3
+RETIREMENT_HOLDINGS_RETRY_DELAY_MS = 5000
+
 
 class MiraeAssetCollector:
     def __init__(
@@ -65,13 +68,26 @@ class MiraeAssetCollector:
     def _collect_retirement_pension_holdings(self, page: Page, captured_at: str) -> list[AssetRecord]:
         if not self._setting("retirement_account_number"):
             return []
-        frame = self._open_frame_path(page, self.broker_config.routes.retirement_pension_balance_url)
-        self._ensure_logged_in(frame)
-        frame = self._select_retirement_account(page, frame)
-        self._load_all_retirement_rows(frame)
 
-        save_page_debug(page, self.debug_dir, "miraeasset_retirement_pension_balance")
-        return self._parse_retirement_holdings(frame, captured_at)
+        for attempt in range(RETIREMENT_HOLDINGS_MAX_ATTEMPTS):
+            frame = self._open_frame_path(page, self.broker_config.routes.retirement_pension_balance_url)
+            self._ensure_logged_in(frame)
+            frame = self._select_retirement_account(page, frame)
+            self._load_all_retirement_rows(frame)
+
+            records = self._parse_retirement_holdings(frame, captured_at)
+            if records:
+                save_page_debug(page, self.debug_dir, "miraeasset_retirement_pension_balance")
+                return records
+
+            if attempt < RETIREMENT_HOLDINGS_MAX_ATTEMPTS - 1:
+                page.wait_for_timeout(RETIREMENT_HOLDINGS_RETRY_DELAY_MS)
+
+        save_page_debug(page, self.debug_dir, "miraeasset_retirement_pension_balance_empty")
+        raise RuntimeError(
+            "미래에셋 퇴직연금 보유상품을 찾지 못했습니다. "
+            f"{RETIREMENT_HOLDINGS_MAX_ATTEMPTS}회 재시도 후에도 화면이 비어 있습니다."
+        )
 
     def _find_or_open_page(self, context) -> Page:
         for page in context.pages:

@@ -1,8 +1,13 @@
 param(
-    [string]$PythonExe = "C:\Users\Zbook15G5\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
+    [string]$PythonExe = ""
 )
 
 $projectDir = Split-Path -Parent $PSScriptRoot
+$venvPython = Join-Path $projectDir ".venv\Scripts\python.exe"
+
+if (-not $PythonExe) {
+    $PythonExe = $venvPython
+}
 
 if (-not (Test-Path -LiteralPath $PythonExe)) {
     $PythonExe = "python"
@@ -10,3 +15,4 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
 
 Set-Location -LiteralPath $projectDir
 & $PythonExe -m asset_monitor.cli
+exit $LASTEXITCODE

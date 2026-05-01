@@ -82,24 +82,8 @@ def test_ensure_tabs_renames_latest_asset_sheet_to_financial_asset() -> None:
     }
 
 
-def test_refresh_latest_views_summarizes_auto_and_additional_assets() -> None:
+def test_refresh_latest_views_updates_latest_assets_only() -> None:
     service = FakeSheetsService()
-    service.values_service.ranges["추가 금융자산!A2:L"] = [
-        [
-            "2026-04-28T09:00:00+09:00",
-            "수동",
-            "sunha",
-            "현금성자산",
-            "원화예수금",
-            "",
-            "",
-            "추가 예금",
-            "",
-            "KRW",
-            "",
-            "2000",
-        ]
-    ]
 
     writer = object.__new__(GoogleSheetsWriter)
     writer.spreadsheet_id = "spreadsheet-id"
@@ -129,10 +113,8 @@ def test_refresh_latest_views_summarizes_auto_and_additional_assets() -> None:
     )
 
     latest_rows = service.values_service.updated["금융자산!A1"]
-    summary_rows = service.values_service.updated["자산요약!A1"]
 
     assert len(latest_rows) == 2
     assert latest_rows[1][7] == "삼성전자"
-    assert any(row == ["sunha 국내주식 합계(원화환산)", "1000"] for row in summary_rows)
-    assert any(row == ["sunha 현금성자산 합계(원화환산)", "2000"] for row in summary_rows)
-    assert any(row == ["sunha 총자산(원화환산)", "3000"] for row in summary_rows)
+    assert "자산요약" not in service.values_service.cleared
+    assert "자산요약!A1" not in service.values_service.updated

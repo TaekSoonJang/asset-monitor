@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from asset_monitor.brokers.kiwoom.collector import (
     build_kiwoom_domestic_records,
+    build_kiwoom_foreign_cash_records,
     build_kiwoom_foreign_records,
 )
 
@@ -48,3 +49,31 @@ def test_build_kiwoom_foreign_records() -> None:
     assert records[0].amount_in_unit_currency == Decimal("27112.24")
     assert records[0].fx_rate_to_krw == Decimal("1482.9")
     assert records[0].amount_in_krw == Decimal("40204740.696")
+
+
+def test_build_kiwoom_foreign_cash_records() -> None:
+    records = build_kiwoom_foreign_cash_records(
+        "33,749",
+        [
+            ["통화코드", "외화예수금", "해외증권평가금", "기준환율", "환전예수금", "환전평가금"],
+            ["USD", "1,134.2", "73,327.1", "1,484.8", "1,684,060", "108,876,078"],
+        ],
+        captured_at="2026-05-05T22:00:02+09:00",
+        owner_name="sunha",
+    )
+
+    assert len(records) == 2
+    assert records[0].asset_group == "cash_equivalent"
+    assert records[0].asset_subtype == "krw_cash"
+    assert records[0].symbol == "KRW"
+    assert records[0].name == "원화예수금"
+    assert records[0].quantity == Decimal("33749")
+    assert records[0].amount_in_krw == Decimal("33749")
+    assert records[1].asset_group == "cash_equivalent"
+    assert records[1].asset_subtype == "fx_cash"
+    assert records[1].symbol == "USD"
+    assert records[1].name == "USD 외화예수금"
+    assert records[1].quantity == Decimal("1134.2")
+    assert records[1].unit_currency == "USD"
+    assert records[1].fx_rate_to_krw == Decimal("1484.8")
+    assert records[1].amount_in_krw == Decimal("1684060")

@@ -34,9 +34,10 @@ class KiwoomCollector:
 
             domestic = self._collect_domestic_positions(page, captured_at)
             foreign = self._collect_foreign_positions(page, captured_at)
-            if not domestic and not foreign:
+            cash = self._collect_foreign_cash(page, captured_at)
+            if not domestic and not foreign and not cash:
                 raise RuntimeError("키움 화면에서 종목을 찾지 못했습니다.")
-            return {"domestic": domestic, "foreign": foreign, "cash": []}
+            return {"domestic": domestic, "foreign": foreign, "cash": cash}
 
     def _collect_domestic_positions(self, page: Page, captured_at: str) -> list[AssetRecord]:
         page.goto(self.broker_config.routes.domestic_url, wait_until="domcontentloaded")
@@ -84,6 +85,25 @@ class KiwoomCollector:
         )
         return build_kiwoom_foreign_records(
             rows,
+            captured_at=captured_at,
+            owner_name=self.account.name,
+        )
+
+    def _collect_foreign_cash(self, page: Page, captured_at: str) -> list[AssetRecord]:
+        payload = page.evaluate(
+            """
+            () => {
+              const krwCash = (document.querySelector('#won_entr')?.innerText || '').trim();
+              const fxRows = Array.from(document.querySelectorAll('#TDI3013_Q03_g1 table tr'))
+                .map(row => Array.from(row.querySelectorAll('th,td')).map(cell => (cell.innerText || '').trim()))
+                .filter(cells => cells.length > 0);
+              return { krwCash, fxRows };
+            }
+            """
+        )
+        return build_kiwoom_foreign_cash_records(
+            payload.get("krwCash", ""),
+            payload.get("fxRows", []),
             captured_at=captured_at,
             owner_name=self.account.name,
         )
@@ -279,6 +299,74 @@ def build_kiwoom_foreign_records(
                 symbol=symbol,
                 name=name,
                 quantity=quantity,
+                unit_currency=unit_currency,
+                amount_in_unit_currency=amount_in_unit_currency,
+                fx_rate_to_krw=fx_rate_to_krw,
+                amount_in_krw=amount_in_krw,
+                source_page="kiwoom_foreign",
+            )
+        )
+    return records
+
+
+def build_kiwoom_foreign_cash_records(
+    krw_cash_text: str,
+    fx_rows: list[list[str]],
+    *,
+    captured_at: str,
+    owner_name: str,
+) -> list[AssetRecord]:
+    records: list[AssetRecord] = []
+    amount_in_krw = parse_decimal(krw_cash_text)
+    if amount_in_krw is not None:
+        records.append(
+            AssetRecord(
+                captured_at=captured_at,
+                broker_name="kiwoom",
+                owner_name=owner_name,
+                account_name="",
+                account_masked_id="",
+                asset_group="cash_equivalent",
+                asset_subtype="krw_cash",
+                market="",
+                symbol="KRW",
+                name="원화예수금",
+                quantity=amount_in_krw,
+                unit_currency="KRW",
+                amount_in_unit_currency=amount_in_krw,
+                fx_rate_to_krw=None,
+                amount_in_krw=amount_in_krw,
+                source_page="kiwoom_foreign",
+            )
+        )
+
+    data_rows = [
+        cells
+        for cells in fx_rows
+        if len(cells) >= 5 and not _looks_like_notice_row(cells) and not _looks_like_header_row(cells)
+    ]
+    for cells in data_rows:
+        unit_currency = clean_text(cells[0]).upper()
+        amount_in_unit_currency = parse_decimal(cells[1])
+        fx_rate_to_krw = parse_decimal(cells[3])
+        amount_in_krw = parse_decimal(cells[4])
+        if not unit_currency or amount_in_unit_currency is None:
+            continue
+        if amount_in_krw is None:
+            amount_in_krw = _compute_amount_in_krw(amount_in_unit_currency, fx_rate_to_krw)
+        records.append(
+            AssetRecord(
+                captured_at=captured_at,
+                broker_name="kiwoom",
+                owner_name=owner_name,
+                account_name="",
+                account_masked_id="",
+                asset_group="cash_equivalent",
+                asset_subtype="fx_cash",
+                market="",
+                symbol=unit_currency,
+                name=f"{unit_currency} 외화예수금",
+                quantity=amount_in_unit_currency,
                 unit_currency=unit_currency,
                 amount_in_unit_currency=amount_in_unit_currency,
                 fx_rate_to_krw=fx_rate_to_krw,

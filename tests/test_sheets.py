@@ -9,6 +9,10 @@ from asset_monitor.sheets import (
     LATEST_ASSET_SHEET,
     RUN_LOG_HEADERS,
     RUN_LOG_SHEET,
+    SECTOR_CLASSIFICATION_HEADERS,
+    SECTOR_CLASSIFICATION_SHEET,
+    SECTOR_STATUS_HEADERS,
+    SECTOR_STATUS_SHEET,
 )
 
 
@@ -98,9 +102,13 @@ def test_ensure_tabs_renames_latest_asset_sheet_to_financial_asset() -> None:
                 }
             },
             {"addSheet": {"properties": {"title": DAILY_TREND_SHEET}}},
+            {"addSheet": {"properties": {"title": SECTOR_CLASSIFICATION_SHEET}}},
+            {"addSheet": {"properties": {"title": SECTOR_STATUS_SHEET}}},
         ]
     }
     assert service.values_service.updated[f"{DAILY_TREND_SHEET}!1:1"] == [DAILY_TREND_HEADERS]
+    assert service.values_service.updated[f"{SECTOR_CLASSIFICATION_SHEET}!1:1"] == [SECTOR_CLASSIFICATION_HEADERS]
+    assert service.values_service.updated[f"{SECTOR_STATUS_SHEET}!1:1"] == [SECTOR_STATUS_HEADERS]
 
 
 def test_append_run_log_keeps_only_latest_20_entries() -> None:
@@ -144,6 +152,7 @@ def _asset_record(
     asset_subtype: str = "stock",
     captured_at: str = "2026-04-28T07:00:00+09:00",
     symbol: str = "",
+    name: str | None = None,
 ) -> AssetRecord:
     return AssetRecord(
         captured_at=captured_at,
@@ -155,7 +164,7 @@ def _asset_record(
         asset_subtype=asset_subtype,
         market="KRX",
         symbol=symbol,
-        name=symbol or f"{asset_group}-{asset_subtype}",
+        name=name or symbol or f"{asset_group}-{asset_subtype}",
         quantity=Decimal("1"),
         unit_currency="KRW",
         amount_in_unit_currency=Decimal(amount),
@@ -351,3 +360,115 @@ def test_refresh_latest_views_updates_latest_assets_only() -> None:
     assert latest_rows[1][7] == "삼성전자"
     assert "자산요약" not in service.values_service.cleared
     assert "자산요약!A1" not in service.values_service.updated
+
+
+def test_refresh_sector_views_adds_new_holding_as_unclassified() -> None:
+    service = FakeSheetsService()
+    writer = object.__new__(GoogleSheetsWriter)
+    writer.spreadsheet_id = "spreadsheet-id"
+    writer.service = service
+
+    writer.refresh_sector_views(
+        [_asset_record(asset_group="foreign_stock", amount="1000", symbol="NVDA")],
+        captured_at="2026-04-28T10:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    classification_rows = service.values_service.updated[f"{SECTOR_CLASSIFICATION_SHEET}!A1"]
+
+    assert classification_rows == [
+        SECTOR_CLASSIFICATION_HEADERS,
+        ["NVDA", "NVDA", "NVDA", "미분류", "Y", "N", ""],
+    ]
+
+
+def test_refresh_sector_views_removes_missing_non_fixed_holding_and_keeps_fixed_row() -> None:
+    service = FakeSheetsService()
+    service.values_service.ranges[f"{SECTOR_CLASSIFICATION_SHEET}!A2:G"] = [
+        ["OLD", "OLD", "Old Holding", "우주", "Y", "N", "remove"],
+        ["WATCH", "WATCH", "Watch Holding", "우주", "Y", "Y", "keep"],
+        ["RKLB", "RKLB", "RKLB", "우주", "Y", "N", ""],
+    ]
+    writer = object.__new__(GoogleSheetsWriter)
+    writer.spreadsheet_id = "spreadsheet-id"
+    writer.service = service
+
+    writer.refresh_sector_views(
+        [_asset_record(asset_group="foreign_stock", amount="1000", symbol="RKLB")],
+        captured_at="2026-04-28T10:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    classification_rows = service.values_service.updated[f"{SECTOR_CLASSIFICATION_SHEET}!A1"]
+
+    assert classification_rows == [
+        SECTOR_CLASSIFICATION_HEADERS,
+        ["RKLB", "RKLB", "RKLB", "우주", "Y", "N", ""],
+        ["WATCH", "WATCH", "Watch Holding", "우주", "Y", "Y", "keep"],
+    ]
+
+
+def test_refresh_sector_views_sums_different_keys_with_same_sector_and_excludes_tesla_denominator() -> None:
+    service = FakeSheetsService()
+    service.values_service.ranges[f"{SECTOR_CLASSIFICATION_SHEET}!A2:G"] = [
+        ["TSLA", "TSLA", "TSLA", "테슬라", "Y", "N", ""],
+        ["테슬라", "", "테슬라", "테슬라", "Y", "N", ""],
+        ["NVDA", "NVDA", "NVDA", "반도체", "Y", "N", ""],
+    ]
+    writer = object.__new__(GoogleSheetsWriter)
+    writer.spreadsheet_id = "spreadsheet-id"
+    writer.service = service
+
+    writer.refresh_sector_views(
+        [
+            _asset_record(asset_group="foreign_stock", amount="4000", symbol="TSLA"),
+            _asset_record(asset_group="foreign_stock", amount="6000", name="테슬라"),
+            _asset_record(asset_group="foreign_stock", amount="5000", symbol="NVDA"),
+        ],
+        captured_at="2026-04-28T10:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    status_rows = service.values_service.updated[f"{SECTOR_STATUS_SHEET}!A1"]
+
+    assert status_rows[1] == ["2026-04-28T10:00:00+09:00", "테슬라", "10000", "66.67%", "0.00%", "2", "테슬라, TSLA"]
+    assert status_rows[2] == ["2026-04-28T10:00:00+09:00", "반도체", "5000", "33.33%", "100.00%", "1", "NVDA"]
+
+
+def test_refresh_sector_views_includes_additional_assets() -> None:
+    service = FakeSheetsService()
+    service.values_service.ranges[f"{ADDITIONAL_ASSET_SHEET}!A2:L"] = [
+        [
+            "2026-04-28",
+            "MorganStanley",
+            "sunha",
+            "해외주식",
+            "주식",
+            "미국",
+            "GOOGL",
+            "GOOGL",
+            "80.16",
+            "USD",
+            "1469",
+            "44,888,688",
+        ],
+    ]
+    service.values_service.ranges[f"{SECTOR_CLASSIFICATION_SHEET}!A2:G"] = [
+        ["GOOGL", "GOOGL", "GOOGL", "코어", "Y", "N", ""],
+    ]
+    writer = object.__new__(GoogleSheetsWriter)
+    writer.spreadsheet_id = "spreadsheet-id"
+    writer.service = service
+
+    writer.refresh_sector_views(
+        [],
+        captured_at="2026-04-28T10:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    status_rows = service.values_service.updated[f"{SECTOR_STATUS_SHEET}!A1"]
+
+    assert status_rows == [
+        SECTOR_STATUS_HEADERS,
+        ["2026-04-28T10:00:00+09:00", "코어", "44888688", "100.00%", "100.00%", "1", "GOOGL"],
+    ]

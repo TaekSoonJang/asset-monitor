@@ -99,6 +99,11 @@ def run_pipeline(config: AppConfig) -> None:
 
         sheets.ensure_tabs()
         sheets.refresh_latest_views(all_records)
+        sheets.refresh_sector_views(
+            all_records,
+            captured_at=captured_at,
+            timezone=config.timezone,
+        )
         sheets.append_daily_trend(
             all_records,
             captured_at=captured_at,

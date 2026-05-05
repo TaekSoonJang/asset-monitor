@@ -13,6 +13,7 @@
         "pension_account_number": "000-00-0000000",
         "retirement_account_number": "000-0000-0000-0"
       },
+      "samsung": {},
       "upbit": {
         "access_key": "your-upbit-access-key",
         "secret_key": "your-upbit-secret-key",

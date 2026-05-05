@@ -1,0 +1,1 @@
+"""Samsung Securities collector package."""

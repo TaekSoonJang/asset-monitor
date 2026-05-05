@@ -193,6 +193,20 @@ def _load_broker_settings(
             }
         }
 
+    if "samsung" in brokers:
+        settings["samsung"] = {
+            "routes": {
+                "main_url": os.getenv(
+                    "SAMSUNG_MY_ASSET_URL",
+                    "https://www.samsungpop.com/ux/kor/main/my/main.do",
+                ),
+                "type_status_url": os.getenv(
+                    "SAMSUNG_TYPE_STATUS_URL",
+                    "https://www.samsungpop.com/ux/kor/main/my/getTypeStatus.do",
+                ),
+            }
+        }
+
     if "upbit" in brokers:
         settings["upbit"] = {
             "api_base_url": os.getenv("UPBIT_API_BASE_URL", "https://api.upbit.com"),

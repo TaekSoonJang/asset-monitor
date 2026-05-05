@@ -9,6 +9,8 @@ from .kiwoom.collector import KiwoomCollector
 from .kiwoom.config import load_kiwoom_config
 from .miraeasset.config import load_miraeasset_config
 from .miraeasset.collector import MiraeAssetCollector
+from .samsung.collector import SamsungCollector
+from .samsung.config import load_samsung_config
 from .shinhan.collector import ShinhanCollector
 from .shinhan.config import load_shinhan_config
 from .upbit.collector import UpbitCollector
@@ -32,6 +34,12 @@ def create_broker_collector(config: AppConfig, account: AccountConfig, debug_dir
     if broker == "kiwoom":
         return KiwoomCollector(
             broker_config=load_kiwoom_config(config),
+            account=account,
+            debug_dir=debug_dir,
+        )
+    if broker == "samsung":
+        return SamsungCollector(
+            broker_config=load_samsung_config(config),
             account=account,
             debug_dir=debug_dir,
         )

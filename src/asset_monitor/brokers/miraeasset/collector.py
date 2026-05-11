@@ -13,6 +13,11 @@ from .config import MiraeAssetBrokerConfig
 
 RETIREMENT_HOLDINGS_MAX_ATTEMPTS = 3
 RETIREMENT_HOLDINGS_RETRY_DELAY_MS = 5000
+NO_DATA_MARKERS = (
+    "보유 상품이 없습니다.",
+    "조회 내역이 없습니다.",
+    "조회할 펀드가 없습니다",
+)
 
 
 class MiraeAssetCollector:
@@ -416,7 +421,7 @@ class MiraeAssetCollector:
         records: list[AssetRecord] = []
         for row in rows:
             name = clean_text(row.get("name"))
-            if not name or "보유 상품이 없습니다." in name or "조회 내역이 없습니다." in name:
+            if not name or self._is_no_data_row(row):
                 continue
 
             asset_group = self._classify_retirement_asset_group(name)
@@ -463,7 +468,7 @@ class MiraeAssetCollector:
         records: list[AssetRecord] = []
         for row in rows:
             name = clean_text(row.get("name"))
-            if not name or "보유 상품이 없습니다." in name or "조회 내역이 없습니다." in name:
+            if not name or self._is_no_data_row(row):
                 continue
 
             quantity = parse_decimal(row.get(quantity_key))
@@ -489,6 +494,10 @@ class MiraeAssetCollector:
                 )
             )
         return records
+
+    def _is_no_data_row(self, row: dict[str, str]) -> bool:
+        text = " ".join(clean_text(value) for value in row.values())
+        return any(marker in text for marker in NO_DATA_MARKERS)
 
     def _setting(self, key: str) -> str | None:
         value = self.account.settings.get(key)

@@ -17,6 +17,14 @@ class FakePage:
         self.waits.append(timeout_ms)
 
 
+class FakeFrame:
+    def __init__(self, rows: list[dict[str, str]]) -> None:
+        self.rows = rows
+
+    def evaluate(self, script: str) -> list[dict[str, str]]:
+        return self.rows
+
+
 def _retirement_record() -> AssetRecord:
     return AssetRecord(
         captured_at="2026-04-28T12:00:00+09:00",
@@ -79,3 +87,37 @@ def test_retirement_pension_collection_retries_empty_holdings(monkeypatch: pytes
     assert opened_frames == ["frame-1", "frame-2"]
     assert parsed_frames == ["frame-1", "frame-2"]
     assert page.waits == [5000]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "조회할 펀드가 없습니다",
+        "보유 상품이 없습니다.",
+        "조회 내역이 없습니다.",
+    ],
+)
+def test_retirement_pension_parser_ignores_no_data_rows(message: str) -> None:
+    collector = object.__new__(MiraeAssetCollector)
+    collector.account = AccountConfig(
+        broker="miraeasset",
+        name="sunha",
+        cdp_url="http://127.0.0.1:9222",
+        settings={},
+    )
+    collector.broker_config = SimpleNamespace(
+        dom=SimpleNamespace(retirement_holdings_tbody_id="retirementRows")
+    )
+    frame = FakeFrame(
+        [
+            {
+                "name": message,
+                "quantity": "",
+                "evaluation_amount": "",
+            }
+        ]
+    )
+
+    records = collector._parse_retirement_holdings(frame, "2026-04-28T12:00:00+09:00")
+
+    assert records == []

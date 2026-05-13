@@ -151,12 +151,13 @@ def _asset_record(
     amount: str,
     asset_subtype: str = "stock",
     captured_at: str = "2026-04-28T07:00:00+09:00",
+    broker_name: str = "shinhan",
     symbol: str = "",
     name: str | None = None,
 ) -> AssetRecord:
     return AssetRecord(
         captured_at=captured_at,
-        broker_name="shinhan",
+        broker_name=broker_name,
         owner_name="sunha",
         account_name="",
         account_masked_id="",
@@ -433,6 +434,44 @@ def test_refresh_sector_views_sums_different_keys_with_same_sector_and_excludes_
 
     assert status_rows[1] == ["2026-04-28T10:00:00+09:00", "테슬라", "10000", "66.67%", "0.00%", "2", "테슬라, TSLA"]
     assert status_rows[2] == ["2026-04-28T10:00:00+09:00", "반도체", "5000", "33.33%", "100.00%", "1", "NVDA"]
+
+
+def test_refresh_sector_views_merges_same_symbol_from_different_brokers() -> None:
+    service = FakeSheetsService()
+    service.values_service.ranges[f"{SECTOR_CLASSIFICATION_SHEET}!A2:G"] = [
+        ["TSLA", "TSLA", "Tesla", "Growth", "Y", "N", ""],
+    ]
+    writer = object.__new__(GoogleSheetsWriter)
+    writer.spreadsheet_id = "spreadsheet-id"
+    writer.service = service
+
+    writer.refresh_sector_views(
+        [
+            _asset_record(
+                asset_group="foreign_stock",
+                amount="4000",
+                broker_name="miraeasset",
+                symbol="TSLA",
+                name="Tesla",
+            ),
+            _asset_record(
+                asset_group="foreign_stock",
+                amount="6000",
+                broker_name="kiwoom",
+                symbol="TSLA",
+                name="Tesla Alt",
+            ),
+        ],
+        captured_at="2026-04-28T10:00:00+09:00",
+        timezone="Asia/Seoul",
+    )
+
+    status_rows = service.values_service.updated[f"{SECTOR_STATUS_SHEET}!A1"]
+
+    assert status_rows == [
+        SECTOR_STATUS_HEADERS,
+        ["2026-04-28T10:00:00+09:00", "Growth", "10000", "100.00%", "100.00%", "1", "Tesla"],
+    ]
 
 
 def test_refresh_sector_views_includes_additional_assets() -> None:

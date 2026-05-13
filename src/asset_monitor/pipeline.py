@@ -7,7 +7,8 @@ from .brokers import BrokerPartialCollectionError, create_broker_collector
 from .config import AppConfig
 from .debug import prepare_debug_dir
 from .lockfile import FileLock
-from .models import RunLogEntry
+from .models import AssetRecord, RunLogEntry
+from .parsing import clean_text
 from .raw_log import LocalSnapshotLogger
 from .sheets import GoogleSheetsWriter, build_run_log_message
 
@@ -18,7 +19,7 @@ def run_pipeline(config: AppConfig) -> None:
     sheets = GoogleSheetsWriter(config.google_service_account_info, config.spreadsheet_id)
 
     with FileLock(config.lock_file):
-        all_records: list = []
+        all_records: list[AssetRecord] = []
         failures: dict[str, str] = {}
         failed_account_keys: set[tuple[str, str]] = set()
 
@@ -92,6 +93,7 @@ def run_pipeline(config: AppConfig) -> None:
         if not all_records:
             raise RuntimeError("모든 계정 수집이 실패했습니다.")
 
+        _canonicalize_records(all_records)
         raw_logger.append(captured_at, all_records)
 
         sheet_records = all_records
@@ -100,6 +102,7 @@ def run_pipeline(config: AppConfig) -> None:
                 failed_account_keys,
                 before_captured_at=captured_at,
             )
+            _canonicalize_records(sheet_records)
 
         sheets.ensure_tabs()
         sheets.refresh_latest_views(sheet_records)
@@ -124,3 +127,26 @@ def run_pipeline(config: AppConfig) -> None:
 def _safe_name(value: str) -> str:
     safe = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value.strip())
     return safe or "account"
+
+
+def _canonicalize_records(records: list[AssetRecord]) -> None:
+    symbols_by_name: dict[str, str] = {}
+    for record in records:
+        if record.asset_group == "cash_equivalent":
+            continue
+        name = clean_text(record.name)
+        symbol = clean_text(record.symbol)
+        if name and symbol and not _is_internal_product_symbol(symbol):
+            symbols_by_name.setdefault(name, symbol)
+
+    for record in records:
+        if record.asset_group == "cash_equivalent":
+            continue
+        canonical_symbol = symbols_by_name.get(clean_text(record.name))
+        if canonical_symbol and (not record.symbol or _is_internal_product_symbol(record.symbol)):
+            record.symbol = canonical_symbol
+
+
+def _is_internal_product_symbol(value: object) -> bool:
+    symbol = clean_text(value)
+    return len(symbol) == 12 and symbol.isdigit()

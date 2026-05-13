@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -10,6 +11,7 @@ from playwright.sync_api import Page, sync_playwright
 from asset_monitor.config import AccountConfig
 from asset_monitor.debug import save_page_debug
 from asset_monitor.models import AssetRecord
+from asset_monitor.parsing import parse_decimal
 
 from ..base import BrokerPartialCollectionError
 from .config import ShinhanBrokerConfig
@@ -83,7 +85,17 @@ class ShinhanCollector:
         if not self.broker_config.urls.domestic:
             return []
         page.goto(self._url_for_selected_origin(self.broker_config.urls.domestic), wait_until="domcontentloaded")
-        self._run_domestic_search(page)
+        response_payloads = self._run_domestic_search_with_response_probe(page)
+        self._save_domestic_identity_probe(page)
+        response_records = self._parse_domestic_response_payloads(
+            response_payloads,
+            captured_at=captured_at,
+            account_name=account_name,
+            account_masked_id=account_masked_id,
+        )
+        if response_records:
+            save_page_debug(page, self.debug_dir, "domestic")
+            return response_records
         return self._collect_table_page(
             page=page,
             name="domestic",
@@ -320,6 +332,100 @@ class ShinhanCollector:
         page.wait_for_timeout(800)
         self._trigger_search(page)
 
+    def _run_domestic_search_with_response_probe(self, page: Page) -> list[dict[str, Any]]:
+        captured: list[dict[str, Any]] = []
+
+        def handle_response(response) -> None:
+            if len(captured) >= 30:
+                return
+            url = response.url
+            content_type = response.headers.get("content-type", "")
+            should_capture = (
+                "540101" in url
+                or "/siw/myasset/balance/" in url
+                or "json" in content_type.lower()
+            )
+            if not should_capture:
+                return
+            entry: dict[str, Any] = {
+                "url": url,
+                "status": response.status,
+                "content_type": content_type,
+            }
+            try:
+                text = response.text()
+                entry["body_preview"] = text[:50000]
+                try:
+                    entry["json"] = json.loads(text)
+                except Exception:
+                    pass
+            except Exception as exc:
+                entry["body_error"] = str(exc)
+            captured.append(entry)
+
+        page.on("response", handle_response)
+        try:
+            self._run_domestic_search(page)
+        finally:
+            try:
+                page.remove_listener("response", handle_response)
+            except Exception:
+                pass
+            self._write_debug_json("domestic_response_probe.json", captured)
+        return captured
+
+    def _parse_domestic_response_payloads(
+        self,
+        payloads: list[dict[str, Any]],
+        *,
+        captured_at: str,
+        account_name: str,
+        account_masked_id: str,
+    ) -> list[AssetRecord]:
+        for payload in payloads:
+            if "/siw/myasset/balance/540101/data.do" not in str(payload.get("url", "")):
+                continue
+            data = payload.get("json")
+            if not isinstance(data, dict):
+                continue
+            body = data.get("body") or {}
+            rows = body.get("list01") or []
+            if not isinstance(rows, list):
+                continue
+
+            records: list[AssetRecord] = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                name = first_non_empty([row.get("종목명"), row.get("name")])
+                if not name:
+                    continue
+                symbol = _krx_symbol(first_non_empty([row.get("종목코드"), row.get("단축코드"), row.get("symbol")]))
+                amount_in_krw = _parse_decimal_from_any(first_non_empty([row.get("평가금액"), row.get("amountInKrw")]))
+                records.append(
+                    AssetRecord(
+                        captured_at=captured_at,
+                        broker_name=self.account.broker,
+                        owner_name=self.account.name,
+                        account_name=account_name,
+                        account_masked_id=account_masked_id,
+                        asset_group="domestic_stock",
+                        asset_subtype="stock",
+                        market="KRX",
+                        symbol=symbol,
+                        name=name,
+                        quantity=_parse_decimal_from_any(first_non_empty([row.get("결제수량"), row.get("보유수량")])),
+                        unit_currency="KRW",
+                        amount_in_unit_currency=amount_in_krw,
+                        fx_rate_to_krw=None,
+                        amount_in_krw=amount_in_krw,
+                        source_page="domestic",
+                    )
+                )
+            if records:
+                return records
+        return []
+
     def _fetch_foreign_positions_payload(self, page: Page) -> dict[str, Any]:
         password = self._setting("account_inquiry_password") or self._read_input_value(page, "#inq_pw")
         if not password:
@@ -518,6 +624,71 @@ class ShinhanCollector:
         page.wait_for_load_state("networkidle", timeout=10000)
         page.wait_for_timeout(1500)
 
+    def _save_domestic_identity_probe(self, page: Page) -> None:
+        try:
+            section = self.broker_config.selectors.section("domestic")
+            selectors = section.get("table", [])
+            payload = page.evaluate(
+                """
+                (selectors) => {
+                  return selectors.map(selector => {
+                    const tables = (() => {
+                      try {
+                        return Array.from(document.querySelectorAll(selector));
+                      } catch (error) {
+                        return [];
+                      }
+                    })();
+                    return {
+                      selector,
+                      tables: tables
+                        .filter(table => table && table.querySelectorAll('tr').length > 1)
+                        .slice(0, 10)
+                        .map(table => ({
+                          text: (table.innerText || '').trim().slice(0, 500),
+                          htmlId: table.id || '',
+                          className: table.className || '',
+                          headers: Array.from(table.querySelectorAll('th')).map(th => (th.innerText || '').trim()),
+                          rows: Array.from(table.querySelectorAll('tr')).slice(0, 30).map(row => {
+                            const cells = Array.from(row.querySelectorAll('th,td')).map(cell => ({
+                              text: (cell.innerText || '').trim(),
+                              bind: cell.getAttribute('data-bind') || '',
+                              dataset: { ...cell.dataset },
+                              links: Array.from(cell.querySelectorAll('a')).map(link => ({
+                                text: (link.innerText || '').trim(),
+                                href: link.getAttribute('href') || '',
+                                onclick: link.getAttribute('onclick') || '',
+                                dataset: { ...link.dataset },
+                              })),
+                              hiddenInputs: Array.from(cell.querySelectorAll('input[type="hidden"]')).map(input => ({
+                                name: input.getAttribute('name') || '',
+                                id: input.getAttribute('id') || '',
+                                value: input.getAttribute('value') || '',
+                              })),
+                            }));
+                            return {
+                              text: (row.innerText || '').trim(),
+                              bind: row.getAttribute('data-bind') || '',
+                              dataset: { ...row.dataset },
+                              cells,
+                            };
+                          }),
+                        })),
+                    };
+                  });
+                }
+                """,
+                selectors,
+            )
+            self._write_debug_json("domestic_identity_probe.json", payload)
+        except Exception:
+            return
+
+    def _write_debug_json(self, filename: str, payload: Any) -> None:
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        probe_path = self.debug_dir / filename
+        probe_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def _setting(self, key: str) -> str | None:
         value = self.account.settings.get(key)
         if value is None:
@@ -530,3 +701,14 @@ class ShinhanCollector:
         if not value:
             raise RuntimeError(f"Account '{self.account.name}' is missing broker setting '{key}'.")
         return value
+
+
+def _krx_symbol(value: str) -> str:
+    symbol = value.strip().upper()
+    if len(symbol) == 6 and symbol.isdigit():
+        return f"A{symbol}"
+    return symbol
+
+
+def _parse_decimal_from_any(value: str) -> Any:
+    return parse_decimal(str(value)) if value is not None else None

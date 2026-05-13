@@ -1,4 +1,5 @@
 from asset_monitor.brokers.shinhan.collector import ShinhanCollector
+from asset_monitor.config import AccountConfig
 
 
 class FakePage:
@@ -72,3 +73,41 @@ def test_open_session_requires_existing_shinhan_page() -> None:
         raise AssertionError("Expected RuntimeError")
 
     assert context.new_page_called is False
+
+
+def test_domestic_response_payload_uses_short_code_as_symbol() -> None:
+    collector = ShinhanCollector.__new__(ShinhanCollector)
+    collector.account = AccountConfig(
+        broker="shinhan",
+        name="sunha",
+        cdp_url="http://127.0.0.1:9222",
+        settings={},
+    )
+
+    records = collector._parse_domestic_response_payloads(
+        [
+            {
+                "url": "https://shinhansec.com/siw/myasset/balance/540101/data.do?v=1",
+                "json": {
+                    "body": {
+                        "list01": [
+                            {
+                                "단축코드": "005930",
+                                "종목명": "Samsung Electronics",
+                                "결제수량": "10",
+                                "평가금액": "1000000",
+                            }
+                        ]
+                    }
+                },
+            }
+        ],
+        captured_at="2026-04-28T12:00:00+09:00",
+        account_name="",
+        account_masked_id="",
+    )
+
+    assert len(records) == 1
+    assert records[0].symbol == "A005930"
+    assert records[0].name == "Samsung Electronics"
+    assert records[0].quantity is not None

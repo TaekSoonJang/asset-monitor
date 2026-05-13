@@ -20,6 +20,7 @@ def run_pipeline(config: AppConfig) -> None:
     with FileLock(config.lock_file):
         all_records: list = []
         failures: dict[str, str] = {}
+        failed_account_keys: set[tuple[str, str]] = set()
 
         for account in config.accounts:
             debug_dir = prepare_debug_dir(
@@ -53,6 +54,7 @@ def run_pipeline(config: AppConfig) -> None:
                 )
             except BrokerPartialCollectionError as exc:
                 failures[f"{account.broker}:{account.name}"] = build_run_log_message(exc.errors)
+                failed_account_keys.add((account.broker, account.name))
                 sheets.ensure_tabs()
                 sheets.append_run_log(
                     RunLogEntry(
@@ -70,6 +72,7 @@ def run_pipeline(config: AppConfig) -> None:
                 )
             except Exception as exc:
                 failures[f"{account.broker}:{account.name}"] = str(exc)
+                failed_account_keys.add((account.broker, account.name))
                 sheets.ensure_tabs()
                 sheets.append_run_log(
                     RunLogEntry(
@@ -91,24 +94,31 @@ def run_pipeline(config: AppConfig) -> None:
 
         raw_logger.append(captured_at, all_records)
 
+        sheet_records = all_records
+        if failed_account_keys:
+            sheet_records = all_records + raw_logger.latest_records_for_accounts(
+                failed_account_keys,
+                before_captured_at=captured_at,
+            )
+
+        sheets.ensure_tabs()
+        sheets.refresh_latest_views(sheet_records)
+        sheets.refresh_sector_views(
+            sheet_records,
+            captured_at=captured_at,
+            timezone=config.timezone,
+        )
+        sheets.append_daily_trend(
+            sheet_records,
+            captured_at=captured_at,
+            timezone=config.timezone,
+        )
+
         if failures:
             raise RuntimeError(
                 "일부 계정 수집이 실패했습니다: "
                 + "; ".join(f"{owner}={message}" for owner, message in sorted(failures.items()))
             )
-
-        sheets.ensure_tabs()
-        sheets.refresh_latest_views(all_records)
-        sheets.refresh_sector_views(
-            all_records,
-            captured_at=captured_at,
-            timezone=config.timezone,
-        )
-        sheets.append_daily_trend(
-            all_records,
-            captured_at=captured_at,
-            timezone=config.timezone,
-        )
 
 
 def _safe_name(value: str) -> str:

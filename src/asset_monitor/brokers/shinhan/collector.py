@@ -287,11 +287,30 @@ class ShinhanCollector:
 
     def _open_session(self, playwright) -> tuple[Any, bool, Page, bool]:
         browser = playwright.chromium.connect_over_cdp(self.account.cdp_url)
-        context = browser.contexts[0] if browser.contexts else browser.new_context(locale="ko-KR")
-        page = context.new_page()
+        if not browser.contexts:
+            raise RuntimeError("Could not find an existing Chrome context for Shinhan CDP session.")
+        context = browser.contexts[0]
+        page = self._find_existing_page(context)
+        if page is None:
+            raise RuntimeError(
+                "Could not find an existing Shinhan tab. Open a logged-in shinhansec.com tab before running."
+            )
         page.set_default_timeout(15000)
         page.set_default_navigation_timeout(30000)
-        return context, False, page, True
+        return context, False, page, False
+
+    def _find_existing_page(self, context) -> Page | None:
+        for page in context.pages:
+            if self._is_shinhan_page(page):
+                return page
+        return None
+
+    def _is_shinhan_page(self, page: Page) -> bool:
+        try:
+            hostname = urlparse(page.url).hostname or ""
+        except Exception:
+            return False
+        return hostname == "shinhansec.com" or hostname.endswith(".shinhansec.com")
 
     def _run_domestic_search(self, page: Page) -> None:
         domestic_account_number = self._require_setting("domestic_account_number")

@@ -11,6 +11,7 @@ class ShinhanUrlConfig:
     domestic: str
     foreign: str
     cash: str
+    total_assets: str
 
 
 @dataclass(slots=True)
@@ -27,6 +28,7 @@ def load_shinhan_config(config: AppConfig) -> ShinhanBrokerConfig:
             domestic="https://shinhansec.com/siw/myasset/balance/540101/view.do",
             foreign="https://shinhansec.com/siw/myasset/balance/380502/view.do",
             cash="https://shinhansec.com/siw/myasset/balance/580001/view.do",
+            total_assets="https://shinhansec.com/siw/myasset/balance/540401/view.do",
         ),
         asset_targets=config.asset_targets,
         selectors=SelectorConfig.load(settings.get("selector_config_path")),

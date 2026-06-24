@@ -6,6 +6,7 @@ from asset_monitor.parsing import (
     parse_decimal,
     parse_foreign_response_payload,
     parse_table_html,
+    parse_total_asset_cash_response_payload,
     summarize_latest,
 )
 
@@ -141,6 +142,35 @@ def test_parse_cash_response_payload() -> None:
     assert records[0].amount_in_krw == Decimal("146340653")
     assert records[1].name == "외화RP"
     assert records[1].amount_in_krw == Decimal("49766385")
+
+
+def test_parse_total_asset_cash_response_payload() -> None:
+    payload = {
+        "body": {
+            "list01": [
+                {
+                    "상품명": "주식",
+                    "평가금액": "288,983,500",
+                    "예수금합": "65,317,131",
+                }
+            ]
+        }
+    }
+
+    records = parse_total_asset_cash_response_payload(
+        payload,
+        captured_at="2026-06-24T22:00:02+09:00",
+        broker_name="shinhan",
+        owner_name="택순",
+        account_name="",
+        account_masked_id="",
+    )
+
+    assert len(records) == 1
+    assert records[0].asset_group == "cash_equivalent"
+    assert records[0].asset_subtype == "krw_cash"
+    assert records[0].name == "예수금합"
+    assert records[0].amount_in_krw == Decimal("65317131")
 
 
 def test_cash_subtype_detection() -> None:

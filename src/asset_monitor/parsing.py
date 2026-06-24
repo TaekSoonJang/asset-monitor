@@ -256,6 +256,44 @@ def parse_cash_response_payload(
     return records
 
 
+def parse_total_asset_cash_response_payload(
+    payload: dict,
+    *,
+    captured_at: str,
+    broker_name: str,
+    owner_name: str,
+    account_name: str,
+    account_masked_id: str,
+    source_page: str = "shinhan_total_assets",
+) -> list[AssetRecord]:
+    amount_krw = _find_total_asset_cash_amount(payload.get("body") or payload)
+    if amount_krw is None:
+        amount_krw = _find_total_asset_cash_amount(payload)
+    if amount_krw is None:
+        return []
+
+    return [
+        AssetRecord(
+            captured_at=captured_at,
+            broker_name=broker_name,
+            owner_name=owner_name,
+            account_name=account_name,
+            account_masked_id=account_masked_id,
+            asset_group="cash_equivalent",
+            asset_subtype="krw_cash",
+            market="",
+            symbol="",
+            name="예수금합",
+            quantity=None,
+            unit_currency="KRW",
+            amount_in_unit_currency=amount_krw,
+            fx_rate_to_krw=None,
+            amount_in_krw=amount_krw,
+            source_page=source_page,
+        )
+    ]
+
+
 def summarize_latest(records: list[AssetRecord]) -> tuple[list[list[str]], list[list[str]]]:
     latest: dict[tuple[str, str, str, str, str, str], AssetRecord] = {}
     for record in sorted(records, key=lambda item: item.captured_at):
@@ -286,6 +324,34 @@ def summarize_latest(records: list[AssetRecord]) -> tuple[list[list[str]], list[
 
 def _pick(payload: dict, *keys: str) -> str:
     return first_non_empty(payload.get(key) for key in keys)
+
+
+def _find_total_asset_cash_amount(value: object) -> Decimal | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = clean_text(str(key)).replace(" ", "").lower()
+            if normalized_key in {"예수금합", "예수금합계", "depositamount", "deposittotal", "cashamount", "cashtotal"}:
+                amount = parse_decimal(str(child) if child is not None else None)
+                if amount is not None:
+                    return amount
+
+        for child in value.values():
+            amount = _find_total_asset_cash_amount(child)
+            if amount is not None:
+                return amount
+
+    if isinstance(value, list):
+        for child in value:
+            amount = _find_total_asset_cash_amount(child)
+            if amount is not None:
+                return amount
+
+    if isinstance(value, str):
+        match = re.search(r'"(?:예수금합|예수금합계)"\s*:\s*"([^"]+)"', value)
+        if match:
+            return parse_decimal(match.group(1))
+
+    return None
 
 
 def _get_cell(cells: list[str], column_map: dict[str, int], key: str) -> str:

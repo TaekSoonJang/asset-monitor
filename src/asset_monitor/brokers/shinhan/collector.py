@@ -15,7 +15,13 @@ from asset_monitor.parsing import parse_decimal
 
 from ..base import BrokerPartialCollectionError
 from .config import ShinhanBrokerConfig
-from .parsing import first_non_empty, parse_cash_response_payload, parse_foreign_response_payload, parse_table_html
+from .parsing import (
+    first_non_empty,
+    parse_cash_response_payload,
+    parse_foreign_response_payload,
+    parse_table_html,
+    parse_total_asset_cash_response_payload,
+)
 
 
 @dataclass(slots=True)
@@ -141,7 +147,7 @@ class ShinhanCollector:
         page.goto(self._url_for_selected_origin(self.broker_config.urls.cash), wait_until="domcontentloaded")
         payload = self._fetch_cash_assets_payload(page)
         save_page_debug(page, self.debug_dir, "cash")
-        return parse_cash_response_payload(
+        records = parse_cash_response_payload(
             payload,
             captured_at=captured_at,
             broker_name=self.account.broker,
@@ -149,6 +155,79 @@ class ShinhanCollector:
             account_name=account_name,
             account_masked_id=account_masked_id,
         )
+        try:
+            records.extend(
+                self._collect_total_asset_cash(
+                    page=page,
+                    captured_at=captured_at,
+                    account_name=account_name,
+                    account_masked_id=account_masked_id,
+                )
+            )
+        except Exception as exc:
+            self._write_debug_json("total_asset_cash_error.json", {"error": str(exc)})
+        return records
+
+    def _collect_total_asset_cash(
+        self,
+        *,
+        page: Page,
+        captured_at: str,
+        account_name: str,
+        account_masked_id: str,
+    ) -> list[AssetRecord]:
+        if not self.broker_config.urls.total_assets:
+            return []
+        page.goto(self._url_for_selected_origin(self.broker_config.urls.total_assets), wait_until="domcontentloaded")
+        payloads = self._run_total_asset_search_with_response_probe(page)
+        save_page_debug(page, self.debug_dir, "total_assets")
+
+        records: list[AssetRecord] = []
+        for payload in payloads:
+            if "/siw/myasset/balance/540401/data.do" not in str(payload.get("url", "")):
+                continue
+            data = payload.get("json")
+            if not isinstance(data, dict):
+                continue
+            if payload.get("body_preview"):
+                data = {**data, "__raw_text__": payload.get("body_preview")}
+            records.extend(
+                parse_total_asset_cash_response_payload(
+                    data,
+                    captured_at=captured_at,
+                    broker_name=self.account.broker,
+                    owner_name=self.account.name,
+                    account_name=account_name,
+                    account_masked_id=account_masked_id,
+                )
+            )
+            if records:
+                return records
+
+        amount_text = self._read_first_text(page, ['[data-bind="text:ysgTot"]'])
+        amount_krw = parse_decimal(amount_text)
+        if amount_krw is None:
+            return []
+        return [
+            AssetRecord(
+                captured_at=captured_at,
+                broker_name=self.account.broker,
+                owner_name=self.account.name,
+                account_name=account_name,
+                account_masked_id=account_masked_id,
+                asset_group="cash_equivalent",
+                asset_subtype="krw_cash",
+                market="",
+                symbol="",
+                name="예수금합",
+                quantity=None,
+                unit_currency="KRW",
+                amount_in_unit_currency=amount_krw,
+                fx_rate_to_krw=None,
+                amount_in_krw=amount_krw,
+                source_page="shinhan_total_assets",
+            )
+        ]
 
     def _collect_table_page(
         self,
@@ -372,6 +451,48 @@ class ShinhanCollector:
             except Exception:
                 pass
             self._write_debug_json("domestic_response_probe.json", captured)
+        return captured
+
+    def _run_total_asset_search_with_response_probe(self, page: Page) -> list[dict[str, Any]]:
+        captured: list[dict[str, Any]] = []
+
+        def handle_response(response) -> None:
+            if len(captured) >= 30:
+                return
+            url = response.url
+            content_type = response.headers.get("content-type", "")
+            should_capture = (
+                "540401" in url
+                or "/siw/myasset/balance/" in url
+                or "json" in content_type.lower()
+            )
+            if not should_capture:
+                return
+            entry: dict[str, Any] = {
+                "url": url,
+                "status": response.status,
+                "content_type": content_type,
+            }
+            try:
+                text = response.text()
+                entry["body_preview"] = text[:50000]
+                try:
+                    entry["json"] = json.loads(text)
+                except Exception:
+                    pass
+            except Exception as exc:
+                entry["body_error"] = str(exc)
+            captured.append(entry)
+
+        page.on("response", handle_response)
+        try:
+            self._run_domestic_search(page)
+        finally:
+            try:
+                page.remove_listener("response", handle_response)
+            except Exception:
+                pass
+            self._write_debug_json("total_asset_response_probe.json", captured)
         return captured
 
     def _parse_domestic_response_payloads(
